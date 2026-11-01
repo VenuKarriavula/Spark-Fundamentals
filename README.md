@@ -1,4 +1,7 @@
-﻿# Apache Spark
+﻿# Apache Spark — Fundamentals and Hands-on PySpark Notebooks
+
+Practical Apache Spark concepts with runnable notebooks, execution plans, and screenshots. Open any linked `.ipynb` file below on GitHub to preview it, or import it into Databricks to run it.
+
 
 ## 1. Spark architecture
 
@@ -13,7 +16,7 @@ There are four main components:
 | Worker node | The machine where executor processes run. |
 | Executor | Processes the assigned data and holds cached data and intermediate results. |
 
-![Spark cluster architecture](assets/spark-cluster-architecture-reference.png)
+![Spark cluster architecture](spark-cluster-architecture-reference.png)
 
 When an application is submitted using `spark-submit`, it requests resources for the work. The driver coordinates the application, and the cluster manager provides resources for executors. Once the executors are available, the driver sends them tasks and receives their progress and results.
 
@@ -23,7 +26,7 @@ For example, if the code filters orders and then joins them with customer detail
 
 Spark does not process all the data as soon as a transformation is written. It first builds a plan of the operations needed. The computation runs when an action asks for a result. This is called lazy evaluation.
 
-The [lazy evaluation notebook](notebooks/01-lazy-evaluation-and-actions.ipynb) uses three records: Alice, Bob and Charlie. It filters for New York, selects the city column and then counts the rows.
+The [lazy evaluation notebook](01-lazy-evaluation-and-actions.ipynb) uses three records: Alice, Bob and Charlie. It filters for New York, selects the city column and then counts the rows.
 
 ```python
 df_new = df_new.filter(col("city") == "New York")
@@ -53,6 +56,8 @@ RDDs are immutable, meaning their contents are not changed in place. Applying a 
 
 Spark keeps track of the dependencies between operations. This is called lineage, and those dependencies form a DAG, or directed acyclic graph. If a result partition is lost, Spark can follow these steps to recompute it. It does not need to keep every intermediate result in memory for this recovery to work.
 
+![RDD partitioning reference](rdd-partitions-reference.png)
+
 ## 7. Narrow and wide transformations
 
 The difference comes down to whether an operation needs data from other partitions.
@@ -61,7 +66,7 @@ A **narrow transformation** can work within the existing partitions. For example
 
 Think of data split between two sheets. Each sheet can filter its own New York records. But if the requirement is total sales for New York, the amounts from both sheets need to be combined. That is the idea behind a **wide transformation**. Data moves between partitions so that matching keys can be processed together. This movement is called a shuffle, and it adds network and possibly disk work.
 
-The [transformations notebook](notebooks/02-transformations.ipynb) starts with IDs 0 to 11 in four partitions. It compares `filter()` and `select()` with `repartition(2)` and a grouped count on `id % 3`.
+The [transformations notebook](02-transformations.ipynb) starts with IDs 0 to 11 in four partitions. It compares `filter()` and `select()` with `repartition(2)` and a grouped count on `id % 3`.
 
 The final grouped count uses the original 12 rows, giving **4 rows each** for groups 0, 1 and 2. The earlier filter is a separate example. The notebook disables AQE and sets shuffle partitions to four so the execution is easier to follow.
 
@@ -71,7 +76,7 @@ Both operations change the number of partitions, but they do different amounts o
 
 `repartition()` redistributes records through a shuffle. It can increase or decrease the partition count and is useful when the data needs to be spread out again. `coalesce()` combines existing partitions into fewer partitions without a full shuffle. It can reduce the count, but cannot increase it.
 
-The [repartition and coalesce notebook](notebooks/03-repartition-vs-coalesce.ipynb) starts with 1,000 rows in eight partitions:
+The [repartition and coalesce notebook](03-repartition-vs-coalesce.ipynb) starts with 1,000 rows in eight partitions:
 
 ```python
 df = spark.range(1000, numPartitions=8)
@@ -83,6 +88,16 @@ Both results contain the same rows in two partitions. With `repartition(2)`, Spa
 
 Coalesce can save work when fewer partitions are enough, but it may leave the work unevenly distributed. Reducing the count too far also leaves fewer tasks to run in parallel. Repartition can be worth the shuffle cost when a better distribution is needed, even when reducing the number of partitions.
 
+### Execution plan screenshots
+
+**Repartition — data is redistributed through a shuffle:**
+
+![Repartition execution plan](repartition-execution-plan.png)
+
+**Coalesce — partitions are combined without a full shuffle:**
+
+![Coalesce execution plan](coalesce-execution-plan.png)
+
 ## 9. Jobs, stages and tasks
 
 When an action requests a result, Spark starts the work as one or more jobs. Each job is divided into stages, and each stage runs tasks over its partitions.
@@ -91,7 +106,7 @@ In the jobs and stages example, the code filters for Sneakers, selects the order
 
 Tasks before the shuffle prepare the data. Tasks after it read the shuffled results and finish the aggregation. The number of tasks relates to the partitions being processed in a stage, rather than the number of lines in the code.
 
-[Notebook 04](notebooks/04-jobs-stages-tasks-step-by-step.ipynb) puts the steps in separate cells, while [notebook 05](notebooks/05-jobs-stages-tasks-combined.ipynb) combines them. Both produce **Sneakers: 3** with the built-in sample. Moving the code into one cell does not remove the shuffle or change what the calculation needs to do.
+[Notebook 04](04-jobs-stages-tasks-step-by-step.ipynb) puts the steps in separate cells, while [notebook 05](05-jobs-stages-tasks-combined.ipynb) combines them. Both produce **Sneakers: 3** with the built-in sample. Moving the code into one cell does not remove the shuffle or change what the calculation needs to do.
 
 After running the action, the Spark UI can be used to open the job and inspect its stages and tasks.
 
@@ -104,7 +119,7 @@ After the shuffle, the join can be performed in different ways:
 - **Sort-merge join:** sorts the inputs within each partition by the joining key, then moves through the sorted records to find matches.
 - **Shuffled-hash join:** builds a hash lookup table from one input within each partition, then looks up matching keys from the other input. This avoids sorting, but the hash table needs enough memory.
 
-The [joins notebook](notebooks/06-shuffle-and-broadcast-joins.ipynb) uses one million transactions and 100 customers, joined on `customer_id`. Automatic broadcasting and AQE are disabled, with shuffle partitions set to eight.
+The [joins notebook](06-shuffle-and-broadcast-joins.ipynb) uses one million transactions and 100 customers, joined on `customer_id`. Automatic broadcasting and AQE are disabled, with shuffle partitions set to eight.
 
 The normal join is inspected using `explain("formatted")` to see which strategy Spark selects. Every transaction has one matching customer, so the expected result is **1,000,000 rows**.
 
@@ -130,9 +145,9 @@ The explicit `broadcast()` hint requests this strategy even though automatic bro
 
 Displaying a DataFrame once does not automatically save its result for later use. If another action needs the same data, Spark may repeat the steps used to produce it. Caching allows that computed result to be kept and reused.
 
-The [baseline notebook](notebooks/07-caching-baseline.ipynb) creates five rows, adds `Flag = "Yes"` and filters for Alice. Without caching, a later query can repeat the work that creates the Flag column, even though the earlier DataFrame was already displayed.
+The [baseline notebook](07-caching-baseline.ipynb) creates five rows, adds `Flag = "Yes"` and filters for Alice. Without caching, a later query can repeat the work that creates the Flag column, even though the earlier DataFrame was already displayed.
 
-The [caching notebook](notebooks/08-caching-execution.ipynb) caches the original five-row DataFrame before filtering for Alice. It does not add the Flag column. These examples help show how reuse appears in the plan; they are not a timing comparison of identical operations.
+The [caching notebook](08-caching-execution.ipynb) caches the original five-row DataFrame before filtering for Alice. It does not add the Flag column. These examples help show how reuse appears in the plan; they are not a timing comparison of identical operations.
 
 Calling `cache()` marks the DataFrame for caching. The data is stored as an action computes it. In the notebook, the first `display(df1)` happens before `cache()`, so that display does not populate the cache. To load the full result into the cache before using it again:
 
